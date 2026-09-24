@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trello board viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --paper:#e9edf2; --surface:#ffffff; --ink:#1b2a3a; --muted:#5b6b7c; --line:#c9d2dc;
+  --accent:#1f6feb; --accent-ink:#ffffff; --focus:#f5a524;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#14181e; --surface:#1e242c; --ink:#e3e9f0; --muted:#98a6b5; --line:#343d48;
+    --accent:#5b9bff; --accent-ink:#0b1320;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#14181e; --surface:#1e242c; --ink:#e3e9f0; --muted:#98a6b5; --line:#343d48;
+  --accent:#5b9bff; --accent-ink:#0b1320;
+}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.5}
+button,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+
+/* ---------- top bar ---------- */
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+  padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:16px;margin-right:auto;letter-spacing:-.01em}
+.brand-mark{display:grid;grid-template-columns:6px 6px;gap:2px;padding:4px;border-radius:5px;background:var(--accent)}
+.brand-mark i{display:block;width:6px;background:var(--accent-ink);border-radius:1px}
+.brand-mark i:first-child{height:12px}.brand-mark i:last-child{height:7px}
+.controls{display:none;flex-wrap:wrap;gap:8px;align-items:center}
+body.loaded .controls{display:flex}
+.search{width:200px;max-width:100%;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--paper)}
+.toggle{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--muted);cursor:pointer;user-select:none}
+.btn{padding:7px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-weight:600;font-size:14px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+
+/* ---------- start screen ---------- */
+.start{max-width:640px;margin:0 auto;padding:56px 20px 64px}
+body.loaded .start{display:none}
+.start h1{font-size:clamp(28px,5vw,40px);line-height:1.1;letter-spacing:-.02em;margin:0 0 12px;font-weight:800}
+.start p.lead{color:var(--muted);margin:0 0 28px;max-width:52ch}
+.drop{position:relative;border:2px dashed var(--line);border-radius:14px;background:var(--surface);padding:34px 24px;text-align:center;transition:border-color .15s,background .15s}
+.drop.over{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
+.drop-cards{display:flex;justify-content:center;gap:6px;margin-bottom:18px}
+.drop-cards span{display:block;width:44px;border-radius:5px;background:var(--paper);border:1px solid var(--line)}
+.drop-cards span:nth-child(1){height:56px}.drop-cards span:nth-child(2){height:38px}.drop-cards span:nth-child(3){height:70px}
+.drop strong{display:block;font-size:17px;margin-bottom:4px}
+.drop .hint{color:var(--muted);font-size:14px;margin:0 0 16px}
+.drop-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.error{display:none;margin-top:16px;padding:10px 14px;border-radius:10px;background:color-mix(in srgb,#e5484d 14%,var(--surface));border:1px solid color-mix(in srgb,#e5484d 50%,var(--surface));font-size:14px}
+.error.show{display:block}
+.paste{margin-top:18px}
+.paste summary{cursor:pointer;color:var(--muted);font-size:14px}
+.paste textarea{width:100%;min-height:140px;margin:10px 0 8px;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.howto{margin-top:34px;font-size:14px;color:var(--muted)}
+.howto h2{font-size:15px;color:var(--ink);margin:0 0 6px}
+.howto ol{margin:0;padding-left:20px}
+
+/* ---------- board area ---------- */
+#boardHost{display:none}
+body.loaded #boardHost{display:block}
+
+/* ---------- dialogs ---------- */
+dialog{border:none;padding:0;border-radius:14px;width:min(720px,calc(100% - 24px));max-height:calc(100% - 48px);background:var(--surface);color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.35)}
+dialog::backdrop{background:rgba(9,14,22,.6)}
+.dlg-head{display:flex;gap:12px;align-items:flex-start;padding:18px 20px 8px;position:sticky;top:0;background:var(--surface);z-index:1}
+.dlg-head h2{margin:0;font-size:20px;line-height:1.25}
+.dlg-head .in{margin:0 0 2px;font-size:13px;color:var(--muted)}
+.dlg-head .x{margin-left:auto;flex:none;width:34px;height:34px;border-radius:8px;border:none;background:var(--paper);cursor:pointer;font-size:20px;line-height:1}
+.dlg-body{padding:6px 20px 22px}
+#exportDlg textarea{width:100%;height:260px;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--paper);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+#exportDlg p{margin:0 0 10px;color:var(--muted);font-size:14px}
+.row{display:flex;gap:8px;align-items:center;margin-top:10px}
+.toast{font-size:14px;color:var(--muted)}
+@media (max-width:560px){.search{width:100%}.controls{width:100%}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<!-- Board styles: reused verbatim in the exported standalone HTML -->
+<style id="boardCss">
+.board-root{--card:#ffffff;--card-ink:#172b4d;--card-muted:#5e6c84;--list:#f1f2f4;--chip:#091e420f;--rule:#091e4224}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .board-root{--card:#22272b;--card-ink:#dfe4ea;--card-muted:#9fadbc;--list:#101204;--chip:#a1bdd914;--rule:#a6c5e229}
+}
+:root[data-theme="dark"] .board-root{--card:#22272b;--card-ink:#dfe4ea;--card-muted:#9fadbc;--list:#101204;--chip:#a1bdd914;--rule:#a6c5e229}
+.t-board{min-height:calc(100vh - 60px);padding:18px 0 24px;background:#0079bf;font-family:inherit}
+.t-board-head{padding:0 18px 14px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+.t-board-head h1{margin:0;font-size:22px;font-weight:800;letter-spacing:-.01em;line-height:1.2}
+.t-board-head p{margin:4px 0 0;font-size:13px;opacity:.9}
+.t-lists{display:flex;gap:12px;align-items:flex-start;overflow-x:auto;padding:0 18px 12px}
+.t-list{flex:0 0 272px;width:272px;background:var(--list);color:var(--card-ink);border-radius:12px;padding:8px;box-shadow:0 1px 1px rgba(9,30,66,.25)}
+.t-list-head{display:flex;align-items:center;gap:8px;padding:4px 6px 8px}
+.t-list-head h2{margin:0;font-size:14px;font-weight:700;flex:1;overflow-wrap:anywhere}
+.t-count{font-size:12px;color:var(--card-muted);font-weight:600}
+.t-cards{display:flex;flex-direction:column;gap:8px}
+.t-empty{font-size:13px;color:var(--card-muted);padding:4px 6px 6px}
+.t-card{display:block;background:var(--card);color:var(--card-ink);border-radius:8px;box-shadow:0 1px 1px rgba(9,30,66,.25),0 0 1px rgba(9,30,66,.31);overflow:hidden;cursor:pointer;text-align:left;border:none;width:100%;padding:0}
+.t-card:hover{box-shadow:0 0 0 2px #388bff}
+.t-card.archived{opacity:.6}
+.t-cover{height:32px}
+.t-face{padding:8px 10px 8px}
+.t-labels{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.t-label{display:inline-block;min-width:40px;height:16px;line-height:16px;padding:0 8px;border-radius:4px;font-size:11px;font-weight:600;color:#172b4d;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.t-title{font-size:14px;line-height:1.35;overflow-wrap:anywhere}
+.t-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:6px}
+.t-meta:empty{display:none}
+.t-badge{display:inline-flex;align-items:center;gap:3px;font-size:12px;color:var(--card-muted);padding:1px 4px;border-radius:4px}
+.t-badge svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.t-badge.done{background:#1f845a;color:#fff}
+.t-badge.late{background:#c9372c;color:#fff}
+.t-badge.soon{background:#f5cd47;color:#172b4d}
+.t-badge.tag{background:var(--chip)}
+.t-members{display:flex;gap:2px;margin-left:auto}
+.t-av{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff}
+/* detail */
+.t-detail{color:var(--card-ink);font-size:14px}
+.t-detail h3{font-size:13px;font-weight:700;margin:18px 0 6px;color:var(--card-muted)}
+.t-detail .t-labels{margin:4px 0 0}
+.t-detail .t-label{height:24px;line-height:24px;font-size:12px}
+.t-people{display:flex;flex-wrap:wrap;gap:8px}
+.t-person{display:flex;align-items:center;gap:6px}
+.t-desc{overflow-wrap:anywhere}
+.t-desc p{margin:0 0 8px}.t-desc ul{margin:0 0 8px;padding-left:20px}
+.t-desc h4{margin:10px 0 6px;font-size:15px}
+.t-desc code{background:var(--chip);padding:1px 4px;border-radius:4px;font-size:13px}
+.t-desc a,.t-detail a{color:#388bff}
+.t-cl{margin-bottom:14px}
+.t-cl-head{display:flex;justify-content:space-between;font-weight:600;margin-bottom:4px}
+.t-prog{height:6px;border-radius:3px;background:var(--rule);overflow:hidden;margin-bottom:6px}
+.t-prog i{display:block;height:100%;background:#579dff}
+.t-prog i.full{background:#4bce97}
+.t-item{display:flex;gap:8px;align-items:flex-start;padding:3px 0}
+.t-item.ok span{text-decoration:line-through;color:var(--card-muted)}
+.t-item input{margin-top:3px}
+.t-files{margin:0;padding-left:18px}
+.t-comment{padding:8px 10px;border-radius:8px;background:var(--chip);margin-bottom:8px}
+.t-comment-by{font-size:12px;color:var(--card-muted);margin-bottom:2px}
+.t-comment-by b{color:var(--card-ink)}
+.t-none{color:var(--card-muted)}
+/* export-only: cards expand in place */
+details.t-card > summary{list-style:none}
+details.t-card > summary::-webkit-details-marker{display:none}
+details.t-card[open]{box-shadow:0 0 0 2px #388bff}
+details.t-card .t-detail{padding:0 10px 12px;border-top:1px solid var(--rule)}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i></span>Trello board viewer</div>
+  <div class="controls">
+    <input id="search" class="search" type="search" placeholder="Filter cards" aria-label="Filter cards">
+    <label class="toggle"><input type="checkbox" id="archived"> Show archived</label>
+    <button class="btn primary" id="exportBtn">Get HTML</button>
+    <button class="btn" id="resetBtn">Open another file</button>
+  </div>
+</header>
+
+<main class="start" id="start">
+  <h1>Turn a Trello export into a board you can read</h1>
+  <p class="lead">Drop the JSON file from your board export. Lists, cards, labels, checklists, due dates, members and comments show up just like in Trello, and you can take the result away as a single HTML file.</p>
+
+  <div class="drop" id="drop">
+    <div class="drop-cards" aria-hidden="true"><span></span><span></span><span></span></div>
+    <strong>Drop your Trello .json file here</strong>
+    <p class="hint">Nothing is uploaded. The file is read in your browser.</p>
+    <div class="drop-actions">
+      <button class="btn primary" id="pickBtn">Choose file</button>
+      <button class="btn" id="sampleBtn">Try a sample board</button>
+    </div>
+    <input type="file" id="file" accept=".json,application/json" hidden>
+  </div>
+  <div class="error" id="error" role="alert"></div>
+
+  <details class="paste">
+    <summary>Paste JSON instead</summary>
+    <textarea id="pasteArea" placeholder='{"name": "My board", "lists": [...], "cards": [...]}'></textarea>
+    <button class="btn" id="pasteBtn">Render board</button>
+  </details>
+
+  <div class="howto">
+    <h2>Getting the JSON from Trello</h2>
+    <ol>
+      <li>Open the board and click the ••• menu at the top right.</li>
+      <li>Choose Print, export, and share, then Export as JSON.</li>
+      <li>Save the page that opens (Ctrl/Cmd + S) as a .json file.</li>
+    </ol>
+  </div>
+</main>
+
+<div id="boardHost" class="board-root"></div>
+
+<dialog id="cardDlg" aria-labelledby="cardTitle">
+  <div class="dlg-head">
+    <div><p class="in" id="cardList"></p><h2 id="cardTitle"></h2></div>
+    <button class="x" data-close aria-label="Close">×</button>
+  </div>
+  <div class="dlg-body board-root" id="cardBody"></div>
+</dialog>
+
+<dialog id="exportDlg" aria-labelledby="exportTitle">
+  <div class="dlg-head">
+    <h2 id="exportTitle">Standalone HTML</h2>
+    <button class="x" data-close aria-label="Close">×</button>
+  </div>
+  <div class="dlg-body">
+    <p>This is the board as it's shown now, as one self-contained page. Copy it, paste it into a text editor and save it as <b>board.html</b>. Cards open in place when clicked, no scripts needed.</p>
+    <textarea id="exportText" readonly aria-label="Generated HTML"></textarea>
+    <div class="row"><button class="btn primary" id="copyBtn">Copy HTML</button><span class="toast" id="toast" aria-live="polite"></span></div>
+  </div>
+</dialog>
+
+<script>
+(function(){
+"use strict";
+
+const LABEL_COLORS = {green:"#4bce97",yellow:"#f5cd47",orange:"#fea362",red:"#f87168",purple:"#9f8fef",
+  blue:"#579dff",sky:"#6cc3e0",lime:"#94c748",pink:"#e774bb",black:"#8590a2"};
+const COVER_COLORS = {green:"#216e4e",yellow:"#7f5f01",orange:"#a54800",red:"#ae2e24",purple:"#5e4db2",
+  blue:"#0055cc",sky:"#206a83",lime:"#4c6b1f",pink:"#943d73",black:"#596773"};
+const ICON = {
+  desc:'<svg viewBox="0 0 16 16"><path d="M2 3.5h12M2 7h12M2 10.5h8"/></svg>',
+  clock:'<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>',
+  comment:'<svg viewBox="0 0 16 16"><path d="M2.5 3h11v8h-6l-3.5 3v-3h-1.5z"/></svg>',
+  clip:'<svg viewBox="0 0 16 16"><path d="M10.5 4.5l-5 5a1.4 1.4 0 002 2l5.5-5.5a2.8 2.8 0 00-4-4L3.5 7.5a4.2 4.2 0 006 6l4-4"/></svg>',
+  check:'<svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M5 8.2l2 2 4-4.2"/></svg>'
+};
+
+const $ = id => document.getElementById(id);
+let S = null; // parsed board state
+
+/* ---------- helpers ---------- */
+function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+function baseColor(c){return c ? String(c).replace(/_(dark|light)$/,"") : null}
+function labelColor(c){return LABEL_COLORS[baseColor(c)] || "#dcdfe4"}
+function byPos(a,b){return (a.pos||0)-(b.pos||0)}
+function hue(str){let h=0;for(const ch of String(str))h=(h*31+ch.charCodeAt(0))%360;return h}
+function fmtDate(d,withTime){
+  const dt=new Date(d); if(isNaN(dt)) return "";
+  const o={month:"short",day:"numeric"}; if(dt.getFullYear()!==new Date().getFullYear()) o.year="numeric";
+  if(withTime){o.hour="numeric";o.minute="2-digit"}
+  return dt.toLocaleString(undefined,o);
+}
+function safeUrl(u){return /^https?:\/\//i.test(u||"") ? u : null}
+
+function inlineMd(s){
+  return s
+    .replace(/`([^`]+)`/g,"<code>$1</code>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)[^)]*\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g,"$1<em>$2</em>")
+    .replace(/(^|\s)_([^_]+)_(?=\s|$)/g,"$1<em>$2</em>")
+    .replace(/\\([\\`*_{}\[\]()#+\-.!])/g,"$1");
+}
+function md(src){
+  if(!src) return "";
+  let out="",inList=false;
+  for(const raw of esc(src).split(/\r?\n/)){
+    const li=raw.match(/^\s*[-*+]\s+(.*)$/);
+    if(li){ if(!inList){out+="<ul>";inList=true} out+="<li>"+inlineMd(li[1])+"</li>"; continue; }
+    if(inList){out+="</ul>";inList=false}
+    const h=raw.match(/^#{1,6}\s+(.*)$/);
+    if(h) out+="<h4>"+inlineMd(h[1])+"</h4>";
+    else if(raw.trim()) out+="<p>"+inlineMd(raw)+"</p>";
+  }
+  if(inList) out+="</ul>";
+  return out;
+}
+
+/* ---------- parsing ---------- */
+function parseBoard(data){
+  if(!data || typeof data!=="object" || !Array.isArray(data.lists) || !Array.isArray(data.cards)){
+    throw new Error("This file doesn't look like a Trello board export. It needs \"lists\" and \"cards\". Export it from the board menu: Print, export, and share → Export as JSON.");
+  }
+  const membersById={}; (data.members||[]).forEach(m=>membersById[m.id]=m);
+  const labelsById={}; (data.labels||[]).forEach(l=>labelsById[l.id]=l);
+  const checklistsByCard={};
+  (data.checklists||[]).forEach(cl=>{(checklistsByCard[cl.idCard] ||= []).push(cl)});
+  Object.values(checklistsByCard).forEach(a=>a.sort(byPos));
+  const commentsByCard={};
+  (data.actions||[]).forEach(a=>{
+    if(a.type==="commentCard" && a.data && a.data.card){
+      (commentsByCard[a.data.card.id] ||= []).push({
+        text:a.data.text||"", date:a.date,
+        by:(a.memberCreator && (a.memberCreator.fullName||a.memberCreator.username)) || (membersById[a.idMemberCreator]||{}).fullName || "Someone"
+      });
+    }
+  });
+  Object.values(commentsByCard).forEach(a=>a.sort((x,y)=>new Date(y.date)-new Date(x.date)));
+  const prefs=data.prefs||{};
+  let bg=prefs.backgroundColor||"#0079bf";
+  if(prefs.backgroundTopColor && prefs.backgroundBottomColor) bg=`linear-gradient(160deg, ${prefs.backgroundTopColor}, ${prefs.backgroundBottomColor})`;
+  else if(prefs.backgroundBottomColor) bg=prefs.backgroundBottomColor;
+  return {name:data.name||"Untitled board", desc:data.desc||"", bg,
+    lists:data.lists.slice().sort(byPos), cards:data.cards.slice().sort(byPos),
+    membersById, labelsById, checklistsByCard, commentsByCard};
+}
+
+/* ---------- card pieces ---------- */
+function cardLabels(card){
+  const labels=(card.labels && card.labels.length) ? card.labels : (card.idLabels||[]).map(id=>S.labelsById[id]).filter(Boolean);
+  if(!labels.length) return "";
+  return '<div class="t-labels">'+labels.map(l=>
+    `<span class="t-label" style="background:${labelColor(l.color)}" title="${esc(l.name||l.color||"")}">${esc(l.name||"")}</span>`).join("")+"</div>";
+}
+function avatar(m){
+  const name=m.fullName||m.username||"?";
+  const ini=m.initials || name.split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();
+  return `<span class="t-av" style="background:hsl(${hue(m.id||name)} 50% 42%)" title="${esc(name)}">${esc(ini)}</span>`;
+}
+function cardMembers(card){return (card.idMembers||[]).map(id=>S.membersById[id]).filter(Boolean)}
+function checklistStats(card){
+  let done=0,total=0;
+  (S.checklistsByCard[card.id]||[]).forEach(cl=>(cl.checkItems||[]).forEach(it=>{total++; if(it.state==="complete") done++}));
+  if(!total && card.badges){done=card.badges.checkItemsChecked||0; total=card.badges.checkItems||0}
+  return {done,total};
+}
+function dueBadge(card){
+  if(!card.due) return "";
+  const due=new Date(card.due), now=Date.now();
+  let cls=""; if(card.dueComplete) cls="done"; else if(due<now) cls="late"; else if(due-now<86400000) cls="soon";
+  return `<span class="t-badge ${cls}" title="Due ${esc(fmtDate(card.due,true))}">${ICON.clock}${esc(fmtDate(card.due))}</span>`;
+}
+function cardFace(card){
+  const coverColor=card.cover && card.cover.color ? (COVER_COLORS[baseColor(card.cover.color)]||"#596773") : null;
+  const comments=(S.commentsByCard[card.id]||[]).length || (card.badges&&card.badges.comments) || 0;
+  const files=(card.attachments||[]).length || (card.badges&&card.badges.attachments) || 0;
+  const cl=checklistStats(card);
+  let meta="";
+  if(card.closed) meta+='<span class="t-badge tag">Archived</span>';
+  meta+=dueBadge(card);
+  if(card.desc) meta+=`<span class="t-badge" title="Has a description">${ICON.desc}</span>`;
+  if(comments) meta+=`<span class="t-badge" title="Comments">${ICON.comment}${comments}</span>`;
+  if(files) meta+=`<span class="t-badge" title="Attachments">${ICON.clip}${files}</span>`;
+  if(cl.total) meta+=`<span class="t-badge ${cl.done===cl.total?"done":""}" title="Checklist items">${ICON.check}${cl.done}/${cl.total}</span>`;
+  const mem=cardMembers(card);
+  if(mem.length) meta+='<span class="t-members">'+mem.map(avatar).join("")+"</span>";
+  return (coverColor?`<div class="t-cover" style="background:${coverColor}"></div>`:"")+
+    `<div class="t-face">${cardLabels(card)}<div class="t-title">${esc(card.name)}</div><div class="t-meta">${meta}</div></div>`;
+}
+function cardDetail(card){
+  let h="";
+  const lab=cardLabels(card); if(lab) h+="<h3>Labels</h3>"+lab;
+  const mem=cardMembers(card);
+  if(mem.length) h+='<h3>Members</h3><div class="t-people">'+mem.map(m=>`<span class="t-person">${avatar(m)}${esc(m.fullName||m.username)}</span>`).join("")+"</div>";
+  if(card.start||card.due){
+    h+="<h3>Dates</h3><div>";
+    if(card.start) h+="Start: "+esc(fmtDate(card.start,true))+"<br>";
+    if(card.due) h+="Due: "+esc(fmtDate(card.due,true))+(card.dueComplete?" (complete)":"");
+    h+="</div>";
+  }
+  h+='<h3>Description</h3><div class="t-desc">'+(card.desc?md(card.desc):'<span class="t-none">No description</span>')+"</div>";
+  (S.checklistsByCard[card.id]||[]).forEach(cl=>{
+    const items=(cl.checkItems||[]).slice().sort(byPos);
+    const done=items.filter(i=>i.state==="complete").length, pct=items.length?Math.round(done/items.length*100):0;
+    h+=`<h3>Checklist</h3><div class="t-cl"><div class="t-cl-head"><span>${esc(cl.name)}</span><span>${pct}%</span></div>`+
+      `<div class="t-prog"><i class="${pct===100?"full":""}" style="width:${pct}%"></i></div>`+
+      items.map(i=>`<div class="t-item ${i.state==="complete"?"ok":""}"><input type="checkbox" disabled ${i.state==="complete"?"checked":""} aria-label="${i.state==="complete"?"Done":"Not done"}"><span>${inlineMd(esc(i.name))}</span></div>`).join("")+"</div>";
+  });
+  const att=card.attachments||[];
+  if(att.length){
+    h+='<h3>Attachments</h3><ul class="t-files">'+att.map(a=>{
+      const u=safeUrl(a.url); const n=esc(a.name||a.url||"Attachment");
+      return "<li>"+(u?`<a href="${esc(u)}" target="_blank" rel="noopener">${n}</a>`:n)+"</li>";
+    }).join("")+"</ul>";
+  }
+  const cm=S.commentsByCard[card.id]||[];
+  if(cm.length){
+    h+="<h3>Comments</h3>"+cm.map(c=>`<div class="t-comment"><div class="t-comment-by"><b>${esc(c.by)}</b> ${esc(fmtDate(c.date,true))}</div><div class="t-desc">${md(c.text)}</div></div>`).join("");
+  }
+  return '<div class="t-detail">'+h+"</div>";
+}
+
+/* ---------- board ---------- */
+function visibleData(){
+  const showArch=$("archived").checked, q=$("search").value.trim().toLowerCase();
+  const lists=S.lists.filter(l=>showArch||!l.closed);
+  const out=lists.map(l=>({list:l, cards:S.cards.filter(c=>c.idList===l.id && (showArch||!c.closed) &&
+      (!q || (c.name||"").toLowerCase().includes(q) || (c.desc||"").toLowerCase().includes(q)))}));
+  return {out,q};
+}
+function boardMarkup(exportMode){
+  const {out,q}=visibleData();
+  const total=out.reduce((n,x)=>n+x.cards.length,0);
+  let h=`<section class="t-board" style="background:${esc(S.bg)}"><header class="t-board-head"><h1>${esc(S.name)}</h1>`+
+    `<p>${out.length} list${out.length===1?"":"s"}, ${total} card${total===1?"":"s"}${q?` matching “${esc(q)}”`:""}</p></header><div class="t-lists">`;
+  out.forEach(({list,cards})=>{
+    h+=`<section class="t-list"><header class="t-list-head"><h2>${esc(list.name)}${list.closed?" (archived)":""}</h2><span class="t-count">${cards.length}</span></header><div class="t-cards">`;
+    if(!cards.length) h+=`<div class="t-empty">${q?"No matching cards":"No cards"}</div>`;
+    cards.forEach(c=>{
+      if(exportMode) h+=`<details class="t-card${c.closed?" archived":""}"><summary>${cardFace(c)}</summary>${cardDetail(c)}</details>`;
+      else h+=`<div class="t-card${c.closed?" archived":""}" role="button" tabindex="0" data-id="${esc(c.id)}">${cardFace(c)}</div>`;
+    });
+    h+="</div></section>";
+  });
+  return h+"</div></section>";
+}
+function render(){ $("boardHost").innerHTML=boardMarkup(false); }
+
+function openCard(id){
+  const card=S.cards.find(c=>c.id===id); if(!card) return;
+  const list=S.lists.find(l=>l.id===card.idList);
+  $("cardList").textContent=list?"in list "+list.name:"";
+  $("cardTitle").textContent=card.name;
+  $("cardBody").innerHTML=cardDetail(card);
+  $("cardDlg").showModal();
+}
+
+function buildStandalone(){
+  const css=$("boardCss").textContent;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(S.name)}</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.5}
+.t-board{min-height:100vh}
+${css}
+</style>
+</head>
+<body>
+<div class="board-root">
+${boardMarkup(true)}
+</div>
+</body>
+</html>`;
+}
+
+/* ---------- loading ---------- */
+function showError(msg){const e=$("error"); e.textContent=msg; e.classList.add("show")}
+function load(text){
+  $("error").classList.remove("show");
+  let data;
+  try{ data=typeof text==="string"?JSON.parse(text):text }
+  catch(err){ return showError("That isn't valid JSON: "+err.message+". Make sure you saved the whole export page."); }
+  try{ S=parseBoard(data) }catch(err){ return showError(err.message) }
+  $("search").value=""; $("archived").checked=false;
+  document.body.classList.add("loaded");
+  document.title=S.name+" · Trello board viewer";
+  render(); window.scrollTo(0,0);
+}
+function readFile(f){
+  if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>load(r.result);
+  r.onerror=()=>showError("Couldn't read that file. Try choosing it again.");
+  r.readAsText(f);
+}
+
+/* ---------- sample ---------- */
+function sample(){
+  const d=new Date(), iso=n=>new Date(d.getTime()+n*86400000).toISOString();
+  return {name:"Website relaunch",prefs:{backgroundTopColor:"#0c66e4",backgroundBottomColor:"#6e5dc6"},
+    members:[{id:"m1",fullName:"Giulia Rossi",initials:"GR"},{id:"m2",fullName:"Marco Bianchi",initials:"MB"}],
+    labels:[{id:"l1",name:"Design",color:"purple"},{id:"l2",name:"Bug",color:"red"},{id:"l3",name:"Content",color:"green"},{id:"l4",name:"",color:"yellow"}],
+    lists:[{id:"a",name:"To do",pos:1},{id:"b",name:"In progress",pos:2},{id:"c",name:"Done",pos:3}],
+    cards:[
+      {id:"c1",idList:"a",pos:1,name:"Write copy for the pricing page",desc:"Keep it **short**. Three tiers:\n- Starter\n- Team\n- Business",idLabels:["l3"],idMembers:["m1"],due:iso(5)},
+      {id:"c2",idList:"a",pos:2,name:"Collect customer logos",idLabels:["l4"],idMembers:[],cover:{color:"sky"}},
+      {id:"c3",idList:"b",pos:1,name:"New homepage hero",desc:"Mockups in the shared folder. See [the brief](https://example.com).",idLabels:["l1"],idMembers:["m1","m2"],due:iso(0.5),
+        attachments:[{name:"hero-v3.fig",url:"https://example.com/hero-v3.fig"}]},
+      {id:"c4",idList:"b",pos:2,name:"Menu overlaps logo on mobile",idLabels:["l2"],idMembers:["m2"],due:iso(-2)},
+      {id:"c5",idList:"c",pos:1,name:"Pick the new typeface",idLabels:["l1"],idMembers:["m1"],due:iso(-6),dueComplete:true},
+      {id:"c6",idList:"c",pos:2,name:"Old launch checklist",closed:true}
+    ],
+    checklists:[{id:"k1",idCard:"c3",name:"Before review",pos:1,checkItems:[
+      {name:"Desktop layout",state:"complete",pos:1},{name:"Mobile layout",state:"complete",pos:2},{name:"Dark mode",state:"incomplete",pos:3}]}],
+    actions:[{type:"commentCard",date:iso(-1),memberCreator:{fullName:"Marco Bianchi"},data:{card:{id:"c3"},text:"Looks great, can we try a bigger headline?"}},
+      {type:"commentCard",date:iso(-3),memberCreator:{fullName:"Marco Bianchi"},data:{card:{id:"c4"},text:"Happens below 380px wide."}}]
+  };
+}
+
+/* ---------- events ---------- */
+$("pickBtn").onclick=()=>$("file").click();
+$("file").onchange=e=>{readFile(e.target.files[0]); e.target.value=""};
+$("sampleBtn").onclick=()=>load(sample());
+$("pasteBtn").onclick=()=>{const t=$("pasteArea").value.trim(); if(!t) return showError("Paste the JSON text first."); load(t)};
+$("resetBtn").onclick=()=>{document.body.classList.remove("loaded"); $("boardHost").innerHTML=""; document.title="Trello board viewer"};
+$("search").oninput=render;
+$("archived").onchange=render;
+
+const drop=$("drop");
+["dragenter","dragover"].forEach(t=>window.addEventListener(t,e=>{e.preventDefault(); if(!document.body.classList.contains("loaded")) drop.classList.add("over")}));
+["dragleave","drop"].forEach(t=>window.addEventListener(t,e=>{e.preventDefault(); if(t==="dragleave" && e.relatedTarget) return; drop.classList.remove("over")}));
+window.addEventListener("drop",e=>{const f=e.dataTransfer && e.dataTransfer.files[0]; if(f) readFile(f)});
+
+$("boardHost").addEventListener("click",e=>{const c=e.target.closest(".t-card[data-id]"); if(c) openCard(c.dataset.id)});
+$("boardHost").addEventListener("keydown",e=>{
+  if(e.key!=="Enter" && e.key!==" ") return;
+  const c=e.target.closest(".t-card[data-id]"); if(c){e.preventDefault(); openCard(c.dataset.id)}
+});
+
+document.querySelectorAll("dialog").forEach(dl=>{
+  dl.addEventListener("click",e=>{ if(e.target===dl || e.target.closest("[data-close]")) dl.close() });
+});
+
+$("exportBtn").onclick=()=>{ $("exportText").value=buildStandalone(); $("toast").textContent=""; $("exportDlg").showModal(); };
+$("copyBtn").onclick=async()=>{
+  const ta=$("exportText");
+  try{ await navigator.clipboard.writeText(ta.value); $("toast").textContent="Copied. Paste it into a file named board.html."; }
+  catch(_){ ta.focus(); ta.select(); try{document.execCommand("copy"); $("toast").textContent="Copied. Paste it into a file named board.html.";}
+    catch(__){ $("toast").textContent="Text selected. Press Ctrl/Cmd + C to copy."; } }
+};
+})();
+</script>
+</body>
+</html>
